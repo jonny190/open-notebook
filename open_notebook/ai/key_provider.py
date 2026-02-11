@@ -62,6 +62,9 @@ PROVIDER_CONFIG = {
     "ollama": {
         "env_var": "OLLAMA_API_BASE",
     },
+    "gradio": {
+        "env_var": "GRADIO_API_BASE",
+    },
 }
 
 

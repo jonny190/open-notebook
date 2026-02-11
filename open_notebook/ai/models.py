@@ -9,10 +9,35 @@ from esperanto import (
 )
 from loguru import logger
 
+from open_notebook.ai.gradio_tts import GradioTextToSpeechModel
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel, RecordModel
 
-ModelType = Union[LanguageModel, EmbeddingModel, SpeechToTextModel, TextToSpeechModel]
+ModelType = Union[LanguageModel, EmbeddingModel, SpeechToTextModel, TextToSpeechModel, GradioTextToSpeechModel]
+
+
+# =============================================================================
+# Monkey-patch AIFactory to support Gradio TTS provider
+# This is needed because podcast-creator calls AIFactory.create_text_to_speech()
+# directly, bypassing ModelManager.
+# =============================================================================
+_original_create_tts = AIFactory.create_text_to_speech
+
+
+@staticmethod
+def _patched_create_tts(model_name: str, provider: str, config: Optional[dict] = None, **kwargs):
+    if provider in ("gradio", "gradio-tts"):
+        config = config or {}
+        return GradioTextToSpeechModel(
+            model_name=model_name,
+            base_url=config.get("base_url", "http://localhost:7860"),
+            language=config.get("language", "English"),
+            model_size=config.get("model_size", "1.7B"),
+        )
+    return _original_create_tts(model_name=model_name, provider=provider, config=config, **kwargs)
+
+
+AIFactory.create_text_to_speech = _patched_create_tts
 
 
 class Model(ObjectModel):
@@ -200,7 +225,7 @@ class ModelManager:
         if not model_id:
             return None
         model = await self.get_model(model_id, **kwargs)
-        assert model is None or isinstance(model, TextToSpeechModel), (
+        assert model is None or isinstance(model, (TextToSpeechModel, GradioTextToSpeechModel)), (
             f"Expected TextToSpeechModel but got {type(model)}"
         )
         return model

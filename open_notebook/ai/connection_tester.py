@@ -34,6 +34,7 @@ TEST_MODELS = {
     "vertex": ("gemini-2.0-flash", "language"),  # Uses Google Vertex AI
     "azure": ("gpt-35-turbo", "language"),  # Azure OpenAI deployment name
     "openai_compatible": (None, "language"),  # Dynamic - will use first available model
+    "gradio": ("Ryan", "text_to_speech"),  # Gradio TTS with default speaker
 }
 
 
@@ -167,6 +168,26 @@ async def _test_openai_compatible_connection(base_url: str, api_key: Optional[st
     except Exception as e:
         return False, f"Connection error: {str(e)[:100]}"
 
+async def _test_gradio_connection(base_url: str) -> Tuple[bool, str]:
+    """Test Gradio TTS server connectivity."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Hit the Gradio API info endpoint to verify server is running
+            response = await client.get(f"{base_url}/gradio_api/info")
+
+            if response.status_code == 200:
+                return True, "Connected to Gradio TTS server"
+            else:
+                return False, f"Server returned status {response.status_code}"
+
+    except httpx.ConnectError:
+        return False, "Cannot connect to Gradio server. Check if the server is running."
+    except httpx.TimeoutException:
+        return False, "Connection timed out. Check if the server is accessible."
+    except Exception as e:
+        return False, f"Connection error: {str(e)[:100]}"
+
+
 async def test_provider_connection(
     provider: str, model_type: str = "language", config_id: Optional[str] = None
 ) -> Tuple[bool, str]:
@@ -207,6 +228,10 @@ async def test_provider_connection(
         normalized_provider = provider.replace("-", "_")
 
         # Special handling for URL-based providers (no API key, just connectivity)
+        if normalized_provider == "gradio":
+            test_base_url = base_url or os.environ.get("GRADIO_API_BASE", "http://localhost:7860")
+            return await _test_gradio_connection(test_base_url)
+
         if normalized_provider == "ollama":
             # Use base_url from specific config, or environment variable
             test_base_url = base_url or os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
@@ -307,6 +332,7 @@ DEFAULT_TEST_VOICES = {
     "google": "Kore",
     "vertex": "Kore",
     "openai_compatible": "alloy",
+    "gradio": "Ryan",
 }
 
 

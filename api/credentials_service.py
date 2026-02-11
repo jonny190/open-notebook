@@ -57,6 +57,7 @@ PROVIDER_ENV_CONFIG: Dict[str, dict] = {
     "openai_compatible": {
         "required_any": ["OPENAI_COMPATIBLE_BASE_URL", "OPENAI_COMPATIBLE_API_KEY"],
     },
+    "gradio": {"required": ["GRADIO_API_BASE"]},
 }
 
 PROVIDER_MODALITIES: Dict[str, List[str]] = {
@@ -74,6 +75,7 @@ PROVIDER_MODALITIES: Dict[str, List[str]] = {
     "vertex": ["language", "embedding"],
     "azure": ["language", "embedding", "speech_to_text", "text_to_speech"],
     "openai_compatible": ["language", "embedding", "speech_to_text", "text_to_speech"],
+    "gradio": ["text_to_speech"],
 }
 
 
@@ -252,6 +254,13 @@ def create_credential_from_env(provider: str) -> Credential:
             modalities=modalities,
             base_url=os.environ.get("OLLAMA_API_BASE"),
         )
+    elif provider == "gradio":
+        return Credential(
+            name=name,
+            provider=provider,
+            modalities=modalities,
+            base_url=os.environ.get("GRADIO_API_BASE"),
+        )
     elif provider == "vertex":
         return Credential(
             name=name,
@@ -366,6 +375,7 @@ async def test_credential(credential_id: str) -> dict:
 
         from open_notebook.ai.connection_tester import (
             _test_azure_connection,
+            _test_gradio_connection,
             _test_ollama_connection,
             _test_openai_compatible_connection,
         )
@@ -373,6 +383,11 @@ async def test_credential(credential_id: str) -> dict:
         provider = cred.provider.lower()
 
         # Handle special providers
+        if provider == "gradio":
+            base_url = config.get("base_url", "http://localhost:7860")
+            success, message = await _test_gradio_connection(base_url)
+            return {"provider": provider, "success": success, "message": message}
+
         if provider == "ollama":
             base_url = config.get("base_url", "http://localhost:11434")
             success, message = await _test_ollama_connection(base_url)
@@ -494,10 +509,14 @@ async def discover_with_config(provider: str, config: dict) -> List[dict]:
             "eleven_multilingual_v2", "eleven_turbo_v2_5",
             "eleven_turbo_v2", "eleven_monolingual_v1",
         ],
+        "gradio": [
+            "Aiden", "Dylan", "Eric", "Ono_anna", "Ryan",
+            "Serena", "Sohee", "Uncle_fu", "Vivian",
+        ],
     }
 
     if provider in STATIC_MODELS:
-        if not api_key and provider != "ollama":
+        if not api_key and provider not in ("ollama", "gradio"):
             return []
         return [
             {"name": m, "provider": provider}
