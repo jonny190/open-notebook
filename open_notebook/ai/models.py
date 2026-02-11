@@ -1,3 +1,4 @@
+import os
 from typing import Any, ClassVar, Dict, Optional, Union
 
 from esperanto import (
@@ -29,7 +30,7 @@ def _patched_create_tts(provider: str, model_name: Optional[str] = None, api_key
     if provider in ("gradio", "gradio-tts"):
         # ModelManager passes config dict via kwargs; podcast-creator passes positional args only
         config = kwargs.pop("config", None) or {}
-        resolved_base_url = base_url or config.get("base_url", "http://localhost:7860")
+        resolved_base_url = base_url or config.get("base_url") or os.environ.get("GRADIO_API_BASE", "http://localhost:7860")
         return GradioTextToSpeechModel(
             model_name=model_name or "default",
             base_url=resolved_base_url,
