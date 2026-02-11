@@ -25,16 +25,18 @@ _original_create_tts = AIFactory.create_text_to_speech
 
 
 @staticmethod
-def _patched_create_tts(model_name: str, provider: str, config: Optional[dict] = None, **kwargs):
+def _patched_create_tts(provider: str, model_name: Optional[str] = None, api_key: Optional[str] = None, base_url: Optional[str] = None, **kwargs):
     if provider in ("gradio", "gradio-tts"):
-        config = config or {}
+        # ModelManager passes config dict via kwargs; podcast-creator passes positional args only
+        config = kwargs.pop("config", None) or {}
+        resolved_base_url = base_url or config.get("base_url", "http://localhost:7860")
         return GradioTextToSpeechModel(
-            model_name=model_name,
-            base_url=config.get("base_url", "http://localhost:7860"),
+            model_name=model_name or "default",
+            base_url=resolved_base_url,
             language=config.get("language", "English"),
             model_size=config.get("model_size", "1.7B"),
         )
-    return _original_create_tts(model_name=model_name, provider=provider, config=config, **kwargs)
+    return _original_create_tts(provider=provider, model_name=model_name, api_key=api_key, base_url=base_url, **kwargs)
 
 
 AIFactory.create_text_to_speech = _patched_create_tts
