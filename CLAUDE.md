@@ -1,221 +1,160 @@
-# Open Notebook - Root CLAUDE.md
+# CLAUDE.md
 
-This file provides architectural guidance for contributors working on Open Notebook at the project level.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-**Open Notebook** is an open-source, privacy-focused alternative to Google's Notebook LM. It's an AI-powered research assistant enabling users to upload multi-modal content (PDFs, audio, video, web pages), generate intelligent notes, search semantically, chat with AI models, and produce professional podcasts—all with complete control over data and choice of AI providers.
+Open Notebook is an open-source, privacy-focused alternative to Google's Notebook LM. AI-powered research assistant: upload multi-modal content (PDFs, audio, video, web pages), generate notes, search semantically, chat with AI, and produce multi-speaker podcasts. Self-hosted, multi-provider AI (16+ providers via Esperanto library).
 
-**Key Values**: Privacy-first, multi-provider AI support, fully self-hosted option, open-source transparency.
+## Development Commands
 
----
+### Backend (Python/FastAPI)
 
-## Three-Tier Architecture
+```bash
+# Install dependencies
+uv sync
 
-```
-┌─────────────────────────────────────────────────────────┐
-│              Frontend (React/Next.js)                    │
-│              frontend/ @ port 3000                       │
-├─────────────────────────────────────────────────────────┤
-│ - Notebooks, sources, notes, chat, podcasts, search UI  │
-│ - Zustand state management, TanStack Query (React Query)│
-│ - Shadcn/ui component library with Tailwind CSS         │
-└────────────────────────┬────────────────────────────────┘
-                         │ HTTP REST
-┌────────────────────────▼────────────────────────────────┐
-│              API (FastAPI)                              │
-│              api/ @ port 5055                           │
-├─────────────────────────────────────────────────────────┤
-│ - REST endpoints for notebooks, sources, notes, chat    │
-│ - LangGraph workflow orchestration                      │
-│ - Job queue for async operations (podcasts)             │
-│ - Multi-provider AI provisioning via Esperanto          │
-└────────────────────────┬────────────────────────────────┘
-                         │ SurrealQL
-┌────────────────────────▼────────────────────────────────┐
-│         Database (SurrealDB)                            │
-│         Graph database @ port 8000                      │
-├─────────────────────────────────────────────────────────┤
-│ - Records: Notebook, Source, Note, ChatSession, Credential│
-│ - Relationships: source-to-notebook, note-to-source     │
-│ - Vector embeddings for semantic search                 │
-└─────────────────────────────────────────────────────────┘
+# Start SurrealDB (required first)
+make database
+
+# Start API server (port 5055, auto-reload enabled)
+make api
+# or: uv run --env-file .env run_api.py
+
+# Start background worker (for async jobs: podcasts, embeddings)
+make worker
+
+# Start everything at once (DB + API + Worker + Frontend)
+make start-all
+
+# Stop all services
+make stop-all
+
+# Check service status
+make status
 ```
 
----
+### Frontend (Next.js/React)
 
-## Useful sources
+```bash
+cd frontend
+npm install        # first time only
+npm run dev        # dev server on port 3000
+npm run build      # production build
+npm run lint       # ESLint
+npm run test       # Vitest (run once)
+npm run test:watch # Vitest (watch mode)
+```
 
-User documentation is at @docs/
+### Testing & Linting
 
-## Tech Stack
+```bash
+# Python tests
+uv run pytest tests/                    # all tests
+uv run pytest tests/test_domain.py      # single file
+uv run pytest tests/test_domain.py -k "test_name"  # single test
+uv run pytest --cov                     # with coverage
 
-### Frontend (`frontend/`)
-- **Framework**: Next.js 16 (React 19)
-- **Language**: TypeScript
-- **State Management**: Zustand
-- **Data Fetching**: TanStack Query (React Query)
-- **Styling**: Tailwind CSS + Shadcn/ui
-- **Build Tool**: Webpack (via Next.js)
-- **i18n compatible**: All front-end changes must also consider the translation keys
+# Python linting
+make ruff          # ruff check + fix
+make lint          # mypy type checking
+uv run ruff format .  # format code
 
-### API Backend (`api/` + `open_notebook/`)
-- **Framework**: FastAPI 0.104+
-- **Language**: Python 3.11+
-- **Workflows**: LangGraph state machines
-- **Database**: SurrealDB async driver
-- **AI Providers**: Esperanto library (8+ providers: OpenAI, Anthropic, Google, Groq, Ollama, Mistral, DeepSeek, xAI)
-- **Job Queue**: Surreal-Commands for async jobs (podcasts)
-- **Logging**: Loguru
-- **Validation**: Pydantic v2
-- **Testing**: Pytest
+# Frontend tests
+cd frontend && npm run test
+```
 
-### Database
-- **SurrealDB**: Graph database with built-in embedding storage and vector search
-- **Schema Migrations**: Automatic on API startup via AsyncMigrationManager
+### Docker
 
-### Additional Services
-- **Content Processing**: content-core library (file/URL extraction)
-- **Prompts**: AI-Prompter with Jinja2 templating
-- **Podcast Generation**: podcast-creator library
-- **Embeddings**: Multi-provider via Esperanto
+```bash
+make dev                # docker-compose dev mode (builds from source)
+make docker-build-local # build production image locally
+make docker-release     # build + push multi-platform images
+```
 
----
+## Architecture
 
-## Architecture Highlights
+Three-tier: **Frontend** (Next.js @ :3000) → **API** (FastAPI @ :5055) → **Database** (SurrealDB @ :8000).
 
-### 1. Async-First Design
-- All database queries, graph invocations, and API calls are async (await)
-- SurrealDB async driver with connection pooling
-- FastAPI handles concurrent requests efficiently
+```
+frontend/              # Next.js 16, React 19, TypeScript
+├── src/app/           # App Router pages (directory-based routing)
+├── src/components/    # Feature components + Shadcn/ui primitives
+├── src/lib/api/       # Axios client, resource-specific API modules
+├── src/lib/hooks/     # TanStack Query wrappers, SSE streaming, chat hooks
+├── src/lib/stores/    # Zustand state (auth, modals)
+├── src/lib/locales/   # i18n translations (en-US, pt-BR, zh-CN, zh-TW, ja-JP, ru-RU)
+└── src/lib/types/     # TypeScript type definitions
 
-### 2. LangGraph Workflows
-- **source.py**: Content ingestion (extract → embed → save)
-- **chat.py**: Conversational agent with message history
-- **ask.py**: Search + synthesis (retrieve relevant sources → LLM)
-- **transformation.py**: Custom transformations on sources
-- All use `provision_langchain_model()` for smart model selection
+api/                   # FastAPI REST layer
+├── main.py            # App init, CORS, auth middleware, router registration
+├── routers/           # HTTP endpoint handlers
+├── *_service.py       # Business logic orchestrating domain + graphs
+└── models.py          # Pydantic request/response schemas
 
-### 3. Multi-Provider AI
-- **Esperanto library**: Unified interface to 8+ AI providers
-- **Credential system**: Individual encrypted credential records per provider; models link to credentials for direct config
-- **ModelManager**: Factory pattern with fallback logic; uses credential config when available, env vars as fallback
-- **Smart selection**: Detects large contexts, prefers long-context models
-- **Override support**: Per-request model configuration
+open_notebook/         # Core backend logic
+├── domain/            # Data models (Notebook, Source, Note, Credential, etc.)
+│   └── base.py        # ObjectModel (mutable) and RecordModel (singleton) base classes
+├── graphs/            # LangGraph workflows (chat, ask, source, transformation)
+├── ai/                # ModelManager, model provisioning, key_provider, connection_tester
+├── database/          # SurrealDB repository pattern, async migrations
+├── podcasts/          # Speaker/Episode profile models
+└── utils/             # Chunking, embedding, context builder, text utils
 
-### 4. Database Schema
-- **Automatic migrations**: AsyncMigrationManager runs on API startup
-- **SurrealDB graph model**: Records with relationships and embeddings
-- **Vector search**: Built-in semantic search across all content
-- **Transactions**: Repo functions handle ACID operations
+commands/              # surreal-commands async job handlers (embedding, source processing, podcasts)
+prompts/               # Jinja2 prompt templates organized by workflow (ask/, chat/, podcast/)
+tests/                 # Pytest test suite
+```
 
-### 5. Authentication
-- **Current**: Simple password middleware (insecure, dev-only)
-- **Production**: Replace with OAuth/JWT (see CONFIGURATION.md)
+### Key Architectural Patterns
 
----
+- **Async-first**: All DB, AI, and graph operations use async/await
+- **LangGraph workflows**: State machines for chat, search (ask), content ingestion (source), and transformations. Use `provision_langchain_model()` for smart model selection with large-context fallback (>105k tokens)
+- **Fire-and-forget jobs**: Domain model saves submit embedding commands via `surreal_commands`; jobs process asynchronously. Track via `/commands/{id}` endpoint
+- **Multi-provider AI**: Esperanto library unifies 16+ providers. Credentials stored encrypted in SurrealDB (Fernet). Models can link to credentials directly, or fall back to env vars via `key_provider`
+- **Database migrations**: Auto-run on API startup via `AsyncMigrationManager`. Migration files hard-coded in the manager class (not auto-discovered)
+- **Polymorphic model loading**: `ObjectModel.get(id)` resolves subclass from SurrealDB record ID prefix (e.g., `notebook:123` → `Notebook`)
 
-## Important Quirks & Gotchas
+### Frontend Patterns
 
-### API Startup
-- **Migrations run automatically** on startup; check logs for errors
-- **Must start API before UI**: UI depends on API for all data
-- **SurrealDB must be running**: API fails without database connection
+- **Data flow**: Pages → Hooks (TanStack Query) → API module (Axios) → Backend
+- **State**: Zustand for auth/modal state, TanStack Query for server state with cache invalidation
+- **i18n**: All UI strings go through `useTranslation()` hook with Proxy-based `t.section.key` access. All frontend changes must consider translation keys in `src/lib/locales/`
+- **Components**: Shadcn/ui (Radix primitives + Tailwind CSS + CVA variants). Feature components in `components/{feature}/`, reusable primitives in `components/ui/`
 
-### Frontend-Backend Communication
-- **Base API URL**: Configured in `.env.local` (default: http://localhost:5055)
-- **CORS enabled**: Configured in `api/main.py` (allow all origins in dev)
-- **Rate limiting**: Not built-in; add at proxy layer for production
+## Important Gotchas
 
-### LangGraph Workflows
-- **Blocking operations**: Chat/podcast workflows may take minutes; no timeout
-- **State persistence**: Uses SQLite checkpoint storage in `/data/sqlite-db/`
-- **Model fallback**: If primary model fails, falls back to cheaper/smaller model
+- **Start order**: SurrealDB must be running before API. API must be running before frontend
+- **Async loop in graphs**: LangGraph nodes are sync but call async functions; uses `asyncio.new_event_loop()` workaround in `chat.py` and `source_chat.py`
+- **`clean_thinking_content()`**: Strips `<think>...</think>` tags from model responses throughout the codebase
+- **No connection pooling**: Each `repo_*` call opens/closes a SurrealDB connection (adequate for HTTP request scope)
+- **RecordModel singletons**: `__new__` returns existing instance; call `clear_instance()` in tests
+- **FormData handling**: Frontend interceptor removes Content-Type header for FormData requests (browser sets multipart boundary)
+- **CORS open by default**: `api/main.py` allows all origins in dev
 
-### Podcast Generation
-- **Async job queue**: `podcast_service.py` submits jobs but doesn't wait
-- **Track status**: Use `/commands/{command_id}` endpoint to poll status
-- **TTS failures**: Fall back to silent audio if speech synthesis fails
+## Sub-Module CLAUDE.md Files
 
-### Content Processing
-- **File extraction**: Uses content-core library; supports 50+ file types
-- **URL handling**: Extracts text + metadata from web pages
-- **Large files**: Content processing is sync; may block API briefly
+Detailed guidance for specific areas lives in child CLAUDE.md files:
 
----
+- `frontend/src/CLAUDE.md` — React/Next.js architecture, data flow, component patterns
+- `frontend/src/lib/locales/CLAUDE.md` — i18n system, how to add languages
+- `api/CLAUDE.md` — FastAPI routes, services, credential management
+- `open_notebook/domain/CLAUDE.md` — Data models, repository pattern, search
+- `open_notebook/graphs/CLAUDE.md` — LangGraph workflow design
+- `open_notebook/ai/CLAUDE.md` — ModelManager, provisioning, key_provider
+- `open_notebook/database/CLAUDE.md` — SurrealDB ops, migrations
+- `open_notebook/utils/CLAUDE.md` — Chunking, embedding, context builder
+- `open_notebook/podcasts/CLAUDE.md` — Podcast profile models
+- `commands/CLAUDE.md` — Async job handlers
+- `prompts/CLAUDE.md` — Jinja2 prompt templates
 
-## Component References
+## Configuration
 
-See dedicated CLAUDE.md files for detailed guidance:
+- Copy `.env.example` to `.env` for backend config
+- `OPEN_NOTEBOOK_ENCRYPTION_KEY` is required for credential storage
+- AI provider keys can be set via env vars or through the UI (Settings → API Keys)
+- See `docs/5-CONFIGURATION/` for full reference
 
-- **[frontend/CLAUDE.md](frontend/CLAUDE.md)**: React/Next.js architecture, state management, API integration
-- **[api/CLAUDE.md](api/CLAUDE.md)**: FastAPI structure, service pattern, endpoint development
-- **[open_notebook/CLAUDE.md](open_notebook/CLAUDE.md)**: Backend core, domain models, LangGraph workflows, AI provisioning
-- **[open_notebook/domain/CLAUDE.md](open_notebook/domain/CLAUDE.md)**: Data models, repository pattern, search functions
-- **[open_notebook/ai/CLAUDE.md](open_notebook/ai/CLAUDE.md)**: ModelManager, AI provider integration, Esperanto usage
-- **[open_notebook/graphs/CLAUDE.md](open_notebook/graphs/CLAUDE.md)**: LangGraph workflow design, state machines
-- **[open_notebook/database/CLAUDE.md](open_notebook/database/CLAUDE.md)**: SurrealDB operations, migrations, async patterns
+## Contribution Workflow
 
----
-
-## Documentation Map
-
-- **[README.md](README.md)**: Project overview, features, quick start
-- **[docs/index.md](docs/index.md)**: Complete user & deployment documentation
-- **[CONFIGURATION.md](CONFIGURATION.md)**: Environment variables, model configuration
-- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Contribution guidelines
-- **[MAINTAINER_GUIDE.md](MAINTAINER_GUIDE.md)**: Release & maintenance procedures
-
----
-
-## Testing Strategy
-
-- **Unit tests**: `tests/test_domain.py`, `test_models_api.py`
-- **Graph tests**: `tests/test_graphs.py` (workflow integration)
-- **Utils tests**: `tests/test_utils.py`, `tests/test_chunking.py`, `tests/test_embedding.py`
-- **Run all**: `uv run pytest tests/`
-- **Coverage**: Check with `pytest --cov`
-
----
-
-## Common Tasks
-
-### Add a New API Endpoint
-1. Create router in `api/routers/feature.py`
-2. Create service in `api/feature_service.py`
-3. Define schemas in `api/models.py`
-4. Register router in `api/main.py`
-5. Test via http://localhost:5055/docs
-
-### Add a New LangGraph Workflow
-1. Create `open_notebook/graphs/workflow_name.py`
-2. Define StateDict and node functions
-3. Build graph with `.add_node()` / `.add_edge()`
-4. Invoke in service: `graph.ainvoke({"input": ...}, config={"..."})`
-5. Test with sample data in `tests/`
-
-### Add Database Migration
-1. Create `migrations/XXX_description.surql`
-2. Write SurrealQL schema changes
-3. Create `migrations/XXX_description_down.surql` (optional rollback)
-4. API auto-detects on startup; migration runs if newer than recorded version
-
-### Deploy to Production
-1. Review [CONFIGURATION.md](CONFIGURATION.md) for security settings
-2. Use `make docker-release` for multi-platform image
-3. Push to Docker Hub / GitHub Container Registry
-4. Deploy `docker compose --profile multi up`
-5. Verify migrations via API logs
-
----
-
-## Support & Community
-
-- **Documentation**: https://open-notebook.ai
-- **Discord**: https://discord.gg/37XJPXfz2w
-- **Issues**: https://github.com/lfnovo/open-notebook/issues
-- **License**: MIT (see LICENSE)
-
----
-
-**Last Updated**: January 2026 | **Project Version**: 1.2.4+
+Issue-first: create issue → get assigned → then code. Branch naming: `feature/`, `fix/`, `docs/`. PRs must reference an issue. See `docs/7-DEVELOPMENT/contributing.md`.
